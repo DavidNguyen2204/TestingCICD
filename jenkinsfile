@@ -1,0 +1,20 @@
+pipeline {
+    agent any 
+    stages {
+        stage ('Gitclone'){
+            steps{
+                git branch: 'main', url: 'https://github.com/DavidNguyen2204/TestingCICD.git'
+            }
+        }
+        stage ('Test'){
+            steps{
+               echo "Perfoming Test"
+            }
+        }
+         stage ('Build'){
+            steps{
+               echo "Build completed"
+            }
+        }
+    }
+}
