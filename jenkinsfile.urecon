@@ -1,0 +1,110 @@
+def workspace
+node {
+    agent { label "${AGENT}" }
+    workspace = env.WORKSPACE
+}
+pipeline {
+    agent { label "${AGENT}" }
+    environment {
+        DOCKER_BUILDKIT = '1' // Enable Docker BuildKit for improved build performance
+    }
+    parameters {
+        string(name: 'JENKINS_WORKSPACE', defaultValue: "/home/jenkins/workspace/urecon-general" , description: 'Jenkins WORKSPACE')
+        } 
+    stages {
+        stage('Access env variable') {
+            steps {
+                sh "echo ${JENKINS_WORKSPACE}"
+            }
+        }
+
+        stage('Git Clone') {
+            steps {
+                dir("${JENKINS_WORKSPACE}"){
+                git branch: "${BRANCH}", credentialsId: "${CREDENTIAL}", url: "git@bitbucket.org:upskills/urecon.git"} 
+            }
+        }
+        stage("Build Frontend") {
+            steps {dir("${JENKINS_WORKSPACE}"){
+                dir('ur3web') {
+                    sh "yarn"
+                    sh "yarn build" 
+                }}
+            }
+        }
+        stage('Git Clone mslicensing') {
+            steps {dir("${JENKINS_WORKSPACE}"){
+                sh "rm -rf urecon-mslicensing"
+                withCredentials([usernamePassword(credentialsId: "urecon-general", passwordVariable: "password", usernameVariable: "username")]) {
+                        sh '''
+                            git clone https://$username:$password@bitbucket.org/upskills/urecon-mslicensing.git
+                        '''
+                    }
+                sh "ls -ltrh"
+            }}
+        }
+        stage("Pull mslicensing source") {
+            steps {dir("${JENKINS_WORKSPACE}"){
+                sh "cp -rf urecon-mslicensing/* ${JENKINS_WORKSPACE}/module/mslicensing/"
+            }}
+        }
+        stage("Build mslicense") {
+            steps {dir("${JENKINS_WORKSPACE}"){
+                dir('module/mslicensing') {
+                    sh "pip3 install -r ./requirements.txt"
+                    sh "python3.9 compile_project.py"
+                }}
+            }
+        }
+        stage("Copy public key") {
+            steps {dir("${JENKINS_WORKSPACE}"){
+                sh "cp -f ${PEM_PATH} ${JENKINS_WORKSPACE}/module/mslicensing/keys"
+            }}
+        }
+        
+        stage("Build uRecon") {
+            steps {dir("${JENKINS_WORKSPACE}"){
+                sh "/opt/maven/bin/mvn package -DskipTests=true"
+            }}
+        }
+        
+        stage("Build docker image") {
+            steps {dir("${JENKINS_WORKSPACE}"){
+                sh "sudo docker build -t ur3server:${UR3_IMAGE_TAG} -f Dockerfile.ur3 ."
+            }}
+        }
+         stage("Start the server") {
+            steps {dir("${JENKINS_WORKSPACE}"){
+//               sh '''
+//                cd /opt/ur3
+//                sudo docker compose -f docker-compose.ur3.yml down
+//                sudo docker compose -f docker-compose.ur3.yml ${UR3_COMPOSE_OPTIONS} up -d
+//               '''
+                sh '''
+                cd /opt/ur3
+                pwd
+                '''
+                    
+            }}
+        }
+        stage("Release") {
+//         This stage should either be TRIGGER only
+//         OR only run if a parameter is set to true to turn it on
+//         steps
+//         // UR3_RELEASE_TAG default is "release"
+//         docker tag ur3server:${UR3_IMAGE_TAG} ur3server:${UR3_RELEASE_TAG}
+//         docker save -o ur3server.tar ur3server:${UR3_RELEASE_TAG}
+//         Then do the rest similar to sftp.sh script
+//         Param in sftp script should use environment variable
+//         so that we can override it in the Jenkinsfile or Pipeline's parameter
+//         sftp.sh script should be moved to source code and rename to release.sh
+            when { expression { params.RUN_RELEASE == true } }
+            steps {
+                sh 'echo "Release application"'
+                // Add test steps here
+            }
+       }
+    }
+}
+
+
